@@ -1,0 +1,12 @@
+{
+    "summary": "The trace shows communication errors with external devices.",
+    "explanations": {
+        "COMM_ERROR": "The system is experiencing intermittent or persistent failures when communicating with one or more peripherals or the network. This can be due to baud rate mismatch, noise on the bus, or a faulty connection."
+    },
+    "suggested_checks": [
+        "Communication errors happen when the sender and receiver do not understand each other.",
+        "Common causes: wrong speed settings, electrical noise, or loose wiring.",
+        "The error messages often include a code that tells you if it's a timeout, parity error, or framing error.",
+        "Try simplifying the system (e.g., loopback test) to isolate the problem."
+    ]
+}

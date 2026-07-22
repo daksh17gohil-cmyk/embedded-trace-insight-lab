@@ -1,0 +1,145 @@
+"""
+Unit tests for the TraceExplainer mock implementation.
+"""
+
+import pytest
+from dataclasses import dataclass
+from typing import List, Optional
+from datetime import datetime
+
+# Import the module under test.
+from src.ai_explanation.explainer import TraceExplainer, TraceExplanation
+
+
+# Dummy classes to mimic the real Event and DetectedIssue.
+@dataclass
+class Event:
+    timestamp: datetime
+    level: str
+    message: str
+    raw_line: str
+    source: str = "test_source"
+    # Other fields optional for testing.
+
+
+@dataclass
+class DetectedIssue:
+    issue_type: str
+    events: List[Event]
+    description: Optional[str] = None
+
+
+class TestTraceExplainer:
+    """Test suite for TraceExplainer."""
+
+    @pytest.fixture
+    def explainer(self) -> TraceExplainer:
+        return TraceExplainer()
+
+    @pytest.fixture
+    def sample_events(self) -> List[Event]:
+        now = datetime.now()
+        return [
+            Event(now, "ERROR", "Reset occurred", "raw1"),
+            Event(now, "ERROR", "Watchdog timeout", "raw2"),
+        ]
+
+    def test_no_issues(self, explainer: TraceExplainer, sample_events: List[Event]) -> None:
+        """Test that no issues returns a safe default explanation."""
+        result = explainer.generate_explanation(sample_events, [])
+        assert result.summary == "No issues detected in the trace."
+        assert result.explanations == {}
+        assert len(result.suggested_checks) >= 1
+        assert "Ensure the system is running as expected." in result.suggested_checks
+
+    def test_single_issue_analysis(self, explainer: TraceExplainer, sample_events: List[Event]) -> None:
+        """Test a single RESET_LOOP issue in analysis mode."""
+        issues = [DetectedIssue("RESET_LOOP", sample_events)]
+        result = explainer.generate_explanation(sample_events, issues, mode="analysis")
+
+        # Summary
+        assert "repeated system resets detected." in result.summary
+
+        # Explanations
+        assert "RESET_LOOP" in result.explanations
+        assert "hardware fault" in result.explanations["RESET_LOOP"]
+
+        # Suggested checks – should be analysis checks
+        assert len(result.suggested_checks) >= 3
+        assert any("Inspect the last events" in c for c in result.suggested_checks)
+        assert any("power supply voltage" in c for c in result.suggested_checks)
+
+    def test_single_issue_educational(self, explainer: TraceExplainer, sample_events: List[Event]) -> None:
+        """Test a single WATCHDOG_TRIGGER issue in educational mode."""
+        issues = [DetectedIssue("WATCHDOG_TRIGGER", sample_events)]
+        result = explainer.generate_explanation(sample_events, issues, mode="educational")
+
+        # Summary
+        assert "watchdog timer triggered." in result.summary
+
+        # Explanations
+        assert "WATCHDOG_TRIGGER" in result.explanations
+        assert "safety timer" in result.explanations["WATCHDOG_TRIGGER"]
+
+        # Suggested checks – should be educational
+        assert any("watchdog is a safety timer" in c for c in result.suggested_checks)
+        assert any("feed' regularly" in c for c in result.suggested_checks)
+
+    def test_multiple_issues(self, explainer: TraceExplainer, sample_events: List[Event]) -> None:
+        """Test multiple different issues in analysis mode."""
+        issues = [
+            DetectedIssue("COMM_ERROR", sample_events),
+            DetectedIssue("TIME_GAP", sample_events),
+        ]
+        result = explainer.generate_explanation(sample_events, issues, mode="analysis")
+
+        # Summary should include both suffixes.
+        assert "communication errors" in result.summary
+        assert "time gaps" in result.summary
+
+        # Both issue types should be in explanations.
+        assert "COMM_ERROR" in result.explanations
+        assert "TIME_GAP" in result.explanations
+        assert "baud rate" in result.explanations["COMM_ERROR"]
+        assert "data loss" in result.explanations["TIME_GAP"]
+
+        # Checks should be a deduplicated list of analysis checks from both.
+        # The total should be 3‑5.
+        assert 3 <= len(result.suggested_checks) <= 5
+
+        # At least one check from COMM_ERROR and one from TIME_GAP should appear.
+        assert any("physical connections" in c for c in result.suggested_checks)
+        assert any("timestamps" in c for c in result.suggested_checks)
+
+    def test_unknown_issue_type(self, explainer: TraceExplainer, sample_events: List[Event]) -> None:
+        """Test fallback for an unrecognised issue type."""
+        issues = [DetectedIssue("UNKNOWN_FOO", sample_events)]
+        result = explainer.generate_explanation(sample_events, issues, mode="analysis")
+
+        assert "unknown type" in result.summary
+        assert "UNKNOWN_FOO" in result.explanations
+        assert "not recognized" in result.explanations["UNKNOWN_FOO"]
+        assert len(result.suggested_checks) >= 3
+
+    def test_mode_validation(self, explainer: TraceExplainer, sample_events: List[Event]) -> None:
+        """Test that an invalid mode raises ValueError."""
+        with pytest.raises(ValueError, match="mode must be either"):
+            explainer.generate_explanation(sample_events, [], mode="invalid")
+
+    def test_checks_deduplication_and_limiting(self, explainer: TraceExplainer, sample_events: List[Event]) -> None:
+        """Test that suggested_checks are deduplicated and limited to 5."""
+        # Create many issues of different types to generate many checks.
+        issues = [
+            DetectedIssue("RESET_LOOP", sample_events),
+            DetectedIssue("COMM_ERROR", sample_events),
+            DetectedIssue("WATCHDOG_TRIGGER", sample_events),
+            DetectedIssue("TIME_GAP", sample_events),
+        ]
+        result = explainer.generate_explanation(sample_events, issues, mode="analysis")
+
+        # Should have at most 5 unique checks.
+        assert len(result.suggested_checks) <= 5
+        # Ensure no duplicates.
+        assert len(result.suggested_checks) == len(set(result.suggested_checks))
+        # Should have at least 3.
+        assert len(result.suggested_checks) >= 3

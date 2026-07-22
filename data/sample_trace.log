@@ -1,0 +1,2 @@
+2026-07-22T10:00:00.000Z INFO kernel: System boot
+2026-07-22T10:00:02.000Z ERROR i2c_bus: Rx NAK from sensor 0x42
