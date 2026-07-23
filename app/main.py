@@ -5,8 +5,30 @@ Upload a firmware log (.log/.txt/.csv), detect anomalies, and get
 AI-generated explanations in either "analysis" or "educational" mode.
 """
 
+
+"""
+Embedded Trace Insight Lab – Streamlit UI entry point.
+
+Upload a firmware log (.log/.txt/.csv), detect anomalies, and get
+AI-generated explanations in either "analysis" or "educational" mode.
+"""
+
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Ensure the repo root is on sys.path so `src` package imports resolve
+# correctly when Streamlit Cloud runs this file directly.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import tempfile
+
+import streamlit as st
+
+from src.parsing.log_parser import parse_file
+from src.analysis.detector import AnomalyDetector
+from src.ai_explanation.explainer import TraceExplainer
 import tempfile
 from pathlib import Path
 
